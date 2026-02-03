@@ -1,12 +1,17 @@
 import os
 import json
 from typing import Optional
+from prometheus_client import Counter, Histogram, generate_latest, CONTENT_TYPE_LATEST
+from fastapi import Response, Request
 
 import httpx
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 
 app = FastAPI(title="AI Backend Demo (Ollama + Llama3)")
+
+REQUESTS = Counter("ai_backend_requests_total", "Total requests", ["path", "method", "status"])
+LATENCY = Histogram("ai_backend_request_latency_seconds", "Request latency", ["path"])
 
 OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://host.docker.internal:11434")
 MODEL_CHEAP = os.getenv("MODEL_CHEAP", "llama3")
@@ -46,10 +51,22 @@ async def call_ollama(model: str, system_prompt: str, user_prompt: str) -> str:
         data = resp.json()
         return data["message"]["content"]
 
+@app.middleware("http")
+async def metrics_middleware(request: Request, call_next):
+    path = request.url.path
+    with LATENCY.labels(path=path).time():
+        resp = await call_next(request)
+    REQUESTS.labels(path=path, method=request.method, status=str(resp.status_code)).inc()
+    return resp
+
 
 @app.get("/health")
 async def health():
     return {"status": "ok", "cheap": MODEL_CHEAP, "smart": MODEL_SMART}
+
+@app.get("/metrics")
+async def metrics():
+    return Response(generate_latest(), media_type=CONTENT_TYPE_LATEST)
 
 
 @app.post("/ai/moderate")

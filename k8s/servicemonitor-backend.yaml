@@ -1,0 +1,18 @@
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: ai-backend
+  namespace: monitoring
+  labels:
+    release: kube-prometheus-stack
+spec:
+  namespaceSelector:
+    matchNames:
+      - ai-gateway-demo
+  selector:
+    matchLabels:
+      app: ai-backend
+  endpoints:
+    - port: http
+      path: /metrics
+      interval: 15s

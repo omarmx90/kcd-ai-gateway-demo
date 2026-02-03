@@ -1,0 +1,167 @@
+{
+    "uid": "ai-gateway-demo",
+    "title": "AI Gateway Demo",
+    "tags": ["kcd", "ai-gateway", "kong", "demo"],
+    "timezone": "browser",
+    "schemaVersion": 39,
+    "version": 1,
+    "refresh": "5s",
+    "time": { "from": "now-15m", "to": "now" },
+    "templating": {
+      "list": [
+        {
+          "name": "DS_PROMETHEUS",
+          "type": "datasource",
+          "label": "Prometheus",
+          "query": "prometheus",
+          "current": {},
+          "refresh": 1
+        },
+        {
+          "name": "ns_demo",
+          "type": "constant",
+          "label": "Demo Namespace",
+          "query": "ai-gateway-demo"
+        },
+        {
+          "name": "ns_kong",
+          "type": "constant",
+          "label": "Kong Namespace",
+          "query": "kong"
+        }
+      ]
+    },
+    "panels": [
+      {
+        "id": 1,
+        "type": "timeseries",
+        "title": "Kong - Requests / sec (RPS)",
+        "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+        "gridPos": { "x": 0, "y": 0, "w": 8, "h": 7 },
+        "targets": [
+          {
+            "refId": "A",
+            "expr": "sum(rate(kong_http_requests_total[1m]))",
+            "legendFormat": "Kong RPS"
+          }
+        ],
+        "options": { "legend": { "showLegend": true }, "tooltip": { "mode": "single" } }
+      },
+      {
+        "id": 2,
+        "type": "timeseries",
+        "title": "Kong - p95 Proxy Latency (ms)",
+        "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+        "gridPos": { "x": 8, "y": 0, "w": 8, "h": 7 },
+        "targets": [
+          {
+            "refId": "A",
+            "expr": "histogram_quantile(0.95, sum(rate(kong_latency_ms_bucket[5m])) by (le))",
+            "legendFormat": "p95 latency (ms)"
+          }
+        ],
+        "options": { "legend": { "showLegend": true }, "tooltip": { "mode": "single" } }
+      },
+      {
+        "id": 3,
+        "type": "timeseries",
+        "title": "Kong - 4xx / 5xx error rate (req/s)",
+        "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+        "gridPos": { "x": 16, "y": 0, "w": 8, "h": 7 },
+        "targets": [
+          {
+            "refId": "A",
+            "expr": "sum(rate(kong_http_status{code=~\"4..\"}[1m]))",
+            "legendFormat": "4xx req/s"
+          },
+          {
+            "refId": "B",
+            "expr": "sum(rate(kong_http_status{code=~\"5..\"}[1m]))",
+            "legendFormat": "5xx req/s"
+          }
+        ],
+        "options": { "legend": { "showLegend": true }, "tooltip": { "mode": "single" } }
+      },
+      {
+        "id": 4,
+        "type": "timeseries",
+        "title": "AI Backend - Requests / sec (RPS)",
+        "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+        "gridPos": { "x": 0, "y": 7, "w": 8, "h": 7 },
+        "targets": [
+          {
+            "refId": "A",
+            "expr": "sum(rate(ai_backend_requests_total{namespace=\"$ns_demo\"}[1m]))",
+            "legendFormat": "backend RPS"
+          }
+        ],
+        "options": { "legend": { "showLegend": true }, "tooltip": { "mode": "single" } }
+      },
+      {
+        "id": 5,
+        "type": "timeseries",
+        "title": "AI Backend - p95 Latency (seconds)",
+        "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+        "gridPos": { "x": 8, "y": 7, "w": 8, "h": 7 },
+        "targets": [
+          {
+            "refId": "A",
+            "expr": "histogram_quantile(0.95, sum(rate(ai_backend_request_latency_seconds_bucket{namespace=\"$ns_demo\"}[5m])) by (le))",
+            "legendFormat": "backend p95 (s)"
+          }
+        ],
+        "options": { "legend": { "showLegend": true }, "tooltip": { "mode": "single" } }
+      },
+      {
+        "id": 6,
+        "type": "timeseries",
+        "title": "HPA - Current Replicas (ai-backend)",
+        "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+        "gridPos": { "x": 16, "y": 7, "w": 8, "h": 7 },
+        "targets": [
+          {
+            "refId": "A",
+            "expr": "kube_horizontalpodautoscaler_status_current_replicas{namespace=\"$ns_demo\", horizontalpodautoscaler=\"ai-backend-hpa\"}",
+            "legendFormat": "current replicas"
+          },
+          {
+            "refId": "B",
+            "expr": "kube_horizontalpodautoscaler_spec_max_replicas{namespace=\"$ns_demo\", horizontalpodautoscaler=\"ai-backend-hpa\"}",
+            "legendFormat": "max replicas"
+          }
+        ],
+        "options": { "legend": { "showLegend": true }, "tooltip": { "mode": "single" } }
+      },
+      {
+        "id": 7,
+        "type": "timeseries",
+        "title": "AI Backend - CPU (cores)",
+        "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+        "gridPos": { "x": 0, "y": 14, "w": 12, "h": 7 },
+        "targets": [
+          {
+            "refId": "A",
+            "expr": "sum(rate(container_cpu_usage_seconds_total{namespace=\"$ns_demo\", pod=~\"ai-backend-.*\", container!=\"POD\", container!=\"\"}[1m]))",
+            "legendFormat": "cpu cores"
+          }
+        ],
+        "options": { "legend": { "showLegend": true }, "tooltip": { "mode": "single" } }
+      },
+      {
+        "id": 8,
+        "type": "timeseries",
+        "title": "Kong - CPU (cores)",
+        "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+        "gridPos": { "x": 12, "y": 14, "w": 12, "h": 7 },
+        "targets": [
+          {
+            "refId": "A",
+            "expr": "sum(rate(container_cpu_usage_seconds_total{namespace=\"$ns_kong\", pod=~\"kong-kong-.*\", container!=\"POD\", container!=\"\"}[1m]))",
+            "legendFormat": "kong cpu cores"
+          }
+        ],
+        "options": { "legend": { "showLegend": true }, "tooltip": { "mode": "single" } }
+      }
+    ]
+  }
+  
