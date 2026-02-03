@@ -2,9 +2,9 @@ CLUSTER_NAME = ai-gateway-cluster
 IMAGE_NAME   = ai-backend
 NAMESPACE    = ai-gateway-demo
 
-.PHONY: run destroy build cluster load-image kong-crds kong deploy observability status load verify
+.PHONY: run destroy build cluster load-image kong-crds kong deploy observability status load dashboards verify
 
-run: build cluster load-image kong-crds kong deploy observability status verify
+run: build cluster load-image kong-crds kong deploy observability dashboards status verify
 	@echo "✅ AI Gateway demo is up. Try:"
 	@echo "   curl -X POST -H 'Host: ai-gateway.local' -H 'Content-Type: application/json' \\"
 	@echo "        -d '{\"text\":\"AI Gateways add governance to LLM workloads.\",\"max_words\":20}' \\"
@@ -42,6 +42,9 @@ observability:
 	@./scripts/install-observability.sh
 	@kubectl apply -f k8s/kong-prometheus-plugin.yaml
 	@kubectl apply -f k8s/servicemonitor-backend.yaml
+
+dashboards:
+	@./scripts/install-grafana-dashboards.sh
 
 status:
 	@echo "🌐 Services in $(NAMESPACE):"
