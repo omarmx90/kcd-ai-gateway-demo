@@ -6,13 +6,13 @@ metadata:
   labels:
     release: kube-prometheus-stack
 spec:
-  namespaceSelector:
-    matchNames:
-      - ai-gateway-demo
   selector:
     matchLabels:
       app: ai-backend
+  namespaceSelector:
+    matchNames:
+      - ai-gateway-demo
   endpoints:
     - port: http
       path: /metrics
-      interval: 15s
+      interval: 10s
