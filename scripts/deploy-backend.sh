@@ -9,7 +9,6 @@ kubectl apply -f k8s/namespace.yaml
 kubectl apply -f k8s/deploy-backend.yaml
 kubectl apply -f k8s/service-backend.yaml
  
-# Kong policy (PII Sanitization)
 kubectl apply -f k8s/kong-pii-sanitizer-plugin.yaml
 kubectl apply -f k8s/ingress-gateway.yaml
 kubectl apply -f k8s/hpa-backend.yaml

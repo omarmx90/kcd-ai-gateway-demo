@@ -184,5 +184,3 @@ make destroy
 ```
 
 ---
-
-Happy demoing! 🎤 If you want to extend the policy (e.g., credit card/IBAN patterns) or preload more dashboards, open an issue or PR.
