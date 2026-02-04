@@ -5,6 +5,7 @@ metadata:
   namespace: ai-gateway-demo
   annotations:
     konghq.com/strip-path: "false"
+    konghq.com/plugins: "pii-sanitizer"
 spec:
   ingressClassName: kong
   rules:

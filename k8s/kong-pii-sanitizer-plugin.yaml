@@ -1,0 +1,58 @@
+apiVersion: configuration.konghq.com/v1
+kind: KongPlugin
+metadata:
+  name: pii-sanitizer
+  namespace: ai-gateway-demo
+plugin: pre-function
+config:
+  access:
+    - |
+      local function main()
+        -- Only on POST /ai/*
+        local method = kong.request.get_method()
+        if method ~= "POST" then return end
+        local path = kong.request.get_path()
+        if not string.match(path or "", "^/ai/") then return end
+        local ct = (kong.request.get_header("content-type") or ""):lower()
+        if not string.find(ct, "application/json", 1, true) then return end
+
+        -- Parse JSON body via PDK (more robust than raw body)
+        local body, err = kong.request.get_body()
+        if err or type(body) ~= "table" then return end
+        if not body.text then
+          kong.service.request.set_header("X-PII-REDACTIONS", "0")
+          return
+        end
+
+        local text = tostring(body.text)
+        local redactions = 0
+        -- Use PCRE for robust patterns
+        local function re_redact(pcre, replacement)
+          local new_text, n, err = ngx.re.gsub(text, pcre, replacement, "jo")
+          if not err and n and n > 0 then
+            text = new_text
+            redactions = redactions + n
+          end
+        end
+        -- Email
+        re_redact([[([A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]+)]], "[REDACTED_EMAIL]")
+        -- Phone (very simple heuristic)
+        re_redact([[(\+?\d[\d\-\s\(\)]\d\d\d[\d\-\s\(\)]\d\d\d\d)]], "[REDACTED_PHONE]")
+        -- US SSN
+        re_redact([[([0-9]{3}-[0-9]{2}-[0-9]{4})]], "[REDACTED_SSN]")
+
+        if redactions > 0 then
+          body.text = text
+          -- Set JSON body; PDK handles headers
+          kong.service.request.set_body(body)
+          kong.service.request.set_header("X-PII-REDACTIONS", tostring(redactions))
+          kong.service.request.set_header("X-PII-REDACTED", "true")
+        else
+          kong.service.request.set_header("X-PII-REDACTIONS", "0")
+        end
+      end
+      local ok, err = pcall(main)
+      if not ok then
+        kong.log.err("pii-sanitizer error: ", err)
+      end
+

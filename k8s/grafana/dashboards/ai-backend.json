@@ -1,0 +1,46 @@
+{
+  "uid": "ai-backend-demo",
+  "title": "AI Gateway - Backend Metrics",
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "5s",
+  "panels": [
+    {
+      "id": 1,
+      "type": "timeseries",
+      "title": "AI Requests / sec by endpoint + model",
+      "gridPos": { "x": 0, "y": 8, "w": 24, "h": 8 },
+      "targets": [
+        {
+          "expr": "sum by (endpoint, model) (rate(ai_requests_total[1m]))",
+          "legendFormat": "{{endpoint}} | {{model}}"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "type": "timeseries",
+      "title": "PII Redactions / sec (gateway policy)",
+      "gridPos": { "x": 0, "y": 0, "w": 24, "h": 8 },
+      "targets": [
+        {
+          "expr": "rate(ai_pii_redactions_total[1m])",
+          "legendFormat": "redactions/sec"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "type": "piechart",
+      "title": "Moderation Decisions (blocked vs allowed)",
+      "gridPos": { "x": 0, "y": 16, "w": 12, "h": 7 },
+      "targets": [
+        {
+          "expr": "sum by (decision) (increase(ai_moderation_decisions_total[5m]))",
+          "legendFormat": "{{decision}}"
+        }
+      ]
+    }
+  ]
+}

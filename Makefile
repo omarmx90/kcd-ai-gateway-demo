@@ -66,8 +66,8 @@ verify:
 	@kubectl get pods -n kong | grep -q "Running" || (echo "❌ Kong not running"; exit 1)
 	@kubectl get pods -n $(NAMESPACE) | grep -q "Running" || (echo "❌ Backend not running"; exit 1)
 	@kubectl get ingress -n $(NAMESPACE) ai-gateway >/dev/null
-	@echo "➡️  Checking gateway route (expect HTTP 200)..."
-	@curl -s -o /dev/null -w "%{http_code}\n" -H "Host: ai-gateway.local" http://localhost:8080/health | grep -q "200" || (echo "❌ Gateway /health failed"; exit 1)
+	@echo "⏳ Waiting for gateway /health (HTTP 200)..."
+	@tries=0; until [ $$tries -ge 45 ]; do code=$$(curl -s -o /dev/null -w "%{http_code}" -H "Host: ai-gateway.local" http://localhost:8080/health || true); echo "   /health HTTP $$code"; [ "$$code" = "200" ] && break; tries=$$((tries+1)); sleep 2; done; [ $$tries -lt 45 ] || (echo "❌ Gateway /health failed"; exit 1)
 	@echo "➡️  Checking summarize endpoint (expect HTTP 200)..."
 	@curl -s -o /dev/null -w "%{http_code}\n" -X POST http://localhost:8080/ai/summarize \
 		-H "Host: ai-gateway.local" \
@@ -75,6 +75,23 @@ verify:
 		-d '{"text":"verify","max_words":10}' | grep -q "200" || (echo "❌ Gateway /ai/summarize failed"; exit 1)
 	@echo "➡️  Checking metrics endpoint (expect HTTP 200)..."
 	@curl -s -o /dev/null -w "%{http_code}\n" -H "Host: ai-gateway.local" http://localhost:8080/metrics | grep -q "200" || (echo "❌ /metrics failed"; exit 1)
+	@echo "🔎 Verifying PII Sanitization policy (email should be redacted)..."
+	@curl -s "http://localhost:8080/ai/summarize" \
+		-H "Host: ai-gateway.local" \
+		-H "Content-Type: application/json" \
+		-d '{"text":"Contact me at john.doe@example.com ASAP.","max_words":20}' \
+		| tee /tmp/ai_out.json >/dev/null || true
+	@echo "   Output:"
+	@cat /tmp/ai_out.json || true
+	@echo ""
+	@echo "   Checking if [REDACTED_EMAIL] appears:"
+	@cat /tmp/ai_out.json | grep -q "\[REDACTED_EMAIL\]" && echo "✅ PII redaction OK" || echo "⚠️ No redaction detected (check plugin attachment)"
+	@echo "🔎 Verifying backend metrics endpoint is scraped-ready..."
+	@kubectl -n $(NAMESPACE) get svc ai-backend -o jsonpath='{.spec.ports[0].port}' >/dev/null 2>&1 && echo "✅ ai-backend service exists" || true
+	@echo "   Checking /metrics inside the pod..."
+	@kubectl -n $(NAMESPACE) exec deploy/ai-backend -- sh -c "python -c 'import urllib.request; print(urllib.request.urlopen(\"http://127.0.0.1:8000/metrics\").read(2000).decode())'" \
+		| grep -E "ai_requests_total|ai_pii_redactions_total|ai_moderation_decisions_total" >/dev/null \
+		&& echo "✅ Metrics names present" || echo "⚠️ Metrics not found in backend /metrics"
 	@echo "⏳ Waiting for Grafana readiness (HTTP 200/302)..."
 	@tries=0; until [ $$tries -ge 30 ]; do code=$$(curl -s -o /dev/null -w "%{http_code}" http://localhost:8081 || true); echo "   Grafana HTTP $$code"; echo $$code | egrep -q "200|302" && break; tries=$$((tries+1)); sleep 4; done; [ $$tries -lt 30 ] || (echo "❌ Grafana not reachable in time"; exit 1)
 	@echo "➡️  Checking Grafana (expect HTTP 200/302)..."

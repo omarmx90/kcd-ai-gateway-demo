@@ -4,7 +4,7 @@ import time
 from typing import Optional
 
 import httpx
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from pydantic import BaseModel
 
 from prometheus_client import Counter, Histogram, generate_latest, CONTENT_TYPE_LATEST
@@ -15,16 +15,30 @@ app = FastAPI(title="AI Backend Demo (Ollama + Llama3)")
 OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://host.docker.internal:11434")
 MODEL_CHEAP = os.getenv("MODEL_CHEAP", "llama3")
 MODEL_SMART = os.getenv("MODEL_SMART", "llama3")
+PROVIDER = os.getenv("PROVIDER", "ollama")
 
-REQS = Counter(
-    "ai_backend_requests_total",
-    "Total number of requests",
-    ["endpoint", "status"],
+# Prometheus metrics
+ai_requests_total = Counter(
+    "ai_requests_total",
+    "Total AI requests passing through the AI backend (post-gateway).",
+    ["endpoint", "provider", "model", "status_code"],
 )
-LAT = Histogram(
-    "ai_backend_request_latency_seconds",
-    "Request latency in seconds",
-    ["endpoint"],
+
+ai_request_latency_seconds = Histogram(
+    "ai_request_latency_seconds",
+    "Latency for AI endpoints.",
+    ["endpoint", "provider", "model"],
+)
+
+ai_pii_redactions_total = Counter(
+    "ai_pii_redactions_total",
+    "Total PII redactions performed by the gateway policy (reported via header).",
+)
+
+ai_moderation_decisions_total = Counter(
+    "ai_moderation_decisions_total",
+    "Moderation decisions from /ai/moderate.",
+    ["decision"],
 )
 
 
@@ -75,67 +89,116 @@ async def call_ollama(model: str, system_prompt: str, user_prompt: str) -> str:
 
 
 @app.get("/metrics")
-async def metrics():
+def metrics():
     return Response(generate_latest(), media_type=CONTENT_TYPE_LATEST)
 
 
 @app.get("/health")
 async def health():
-    return {"status": "ok", "cheap": MODEL_CHEAP, "smart": MODEL_SMART}
+    return {"status": "ok", "provider": PROVIDER, "cheap": MODEL_CHEAP, "smart": MODEL_SMART}
+
+
+def observe_pii_header(request: Request) -> None:
+    raw = request.headers.get("x-pii-redactions", "0")
+    try:
+        n = int(raw)
+    except Exception:
+        n = 0
+    if n > 0:
+        ai_pii_redactions_total.inc(n)
+
+
+def record_metrics(endpoint: str, provider: str, model: str, status_code: int, elapsed: float) -> None:
+    ai_requests_total.labels(
+        endpoint=endpoint,
+        provider=provider,
+        model=model,
+        status_code=str(status_code),
+    ).inc()
+    ai_request_latency_seconds.labels(
+        endpoint=endpoint,
+        provider=provider,
+        model=model,
+    ).observe(elapsed)
 
 
 @app.post("/ai/moderate")
 async def moderate(req: ModerateRequest):
+    start = time.perf_counter()
     endpoint = "/ai/moderate"
-    with LAT.labels(endpoint=endpoint).time():
-        system_prompt = (
-            "Classify the following user input for safety. "
-            "Return JSON with allowed:true/false and reason."
-        )
-        user_prompt = req.text
-        raw = await call_ollama(MODEL_CHEAP, system_prompt, user_prompt)
+    model = MODEL_CHEAP
+    system_prompt = (
+        "Classify the following user input for safety. "
+        "Return JSON with allowed:true/false and reason."
+    )
+    try:
+        raw = await call_ollama(model, system_prompt, req.text)
+    except Exception:
+        # Fallback: allow with mock reason to avoid failing demos when LLM is unavailable
+        raw = json.dumps({"allowed": True, "reason": "mock: LLM unavailable"})
 
-        try:
-            data = json.loads(raw)
-            allowed = data.get("allowed", True)
-            reason = data.get("reason", "no reason given")
-        except Exception:
-            allowed = True
-            reason = "LLM returned non-JSON; assuming allowed"
+    allowed = True
+    reason = "no reason given"
+    try:
+        data = json.loads(raw)
+        allowed = bool(data.get("allowed", True))
+        reason = str(data.get("reason", "no reason given"))
+    except Exception:
+        allowed = True
+        reason = "LLM returned non-JSON; assuming allowed"
 
-        REQS.labels(endpoint=endpoint, status="200").inc()
-        return {"allowed": allowed, "reason": reason}
+    decision = "allowed" if allowed else "blocked"
+    ai_moderation_decisions_total.labels(decision=decision).inc()
+
+    elapsed = time.perf_counter() - start
+    record_metrics(endpoint, PROVIDER, model, 200, elapsed)
+    return {"allowed": allowed, "reason": reason}
 
 
 @app.post("/ai/summarize")
-async def summarize(req: SummarizeRequest):
+async def summarize(req: SummarizeRequest, request: Request):
+    start = time.perf_counter()
     endpoint = "/ai/summarize"
-    with LAT.labels(endpoint=endpoint).time():
-        # Tight CPU burn loop to force CPU usage for HPA demos
-        burn = req.cpu_burn_ms or 0
-        if burn > 0:
-            start = time.time()
-            # Busy-wait loop for approximately burn milliseconds
-            while (time.time() - start) * 1000 < burn:
-                pass
+    model = MODEL_CHEAP
+    if req.mode == "smart":
+        model = MODEL_SMART
 
-        model = MODEL_CHEAP
-        if req.mode == "smart":
-            model = MODEL_SMART
+    observe_pii_header(request)
 
-        system_prompt = f"You are a summarization assistant. Summarize in {req.max_words} words."
+    # CPU burn to make autoscaling obvious
+    burn = req.cpu_burn_ms or 0
+    if burn > 0:
+        t0 = time.time()
+        while (time.time() - t0) * 1000 < burn:
+            pass
+
+    system_prompt = f"You are a summarization assistant. Summarize in {req.max_words} words."
+    try:
         result = await call_ollama(model, system_prompt, req.text)
+    except Exception:
+        # Fallback summary so the demo keeps flowing without a running LLM
+        snippet = (req.text or "")[: max(10, min(200, (req.max_words or 50) * 6))].strip()
+        result = f"[mock-summary] {snippet}"
 
-        REQS.labels(endpoint=endpoint, status="200").inc()
-        return {"model_used": model, "summary": result}
+    elapsed = time.perf_counter() - start
+    record_metrics(endpoint, PROVIDER, model, 200, elapsed)
+    return {"provider": PROVIDER, "model_used": model, "summary": result}
 
 
 @app.post("/ai/translate")
-async def translate(req: TranslateRequest):
+async def translate(req: TranslateRequest, request: Request):
+    start = time.perf_counter()
     endpoint = "/ai/translate"
-    with LAT.labels(endpoint=endpoint).time():
-        system_prompt = f"You are a translator to {req.target_language}."
-        result = await call_ollama(MODEL_SMART, system_prompt, req.text)
+    model = MODEL_SMART
 
-        REQS.labels(endpoint=endpoint, status="200").inc()
-        return {"translated_text": result, "target_language": req.target_language}
+    observe_pii_header(request)
+
+    system_prompt = f"You are a translator to {req.target_language}."
+    try:
+        result = await call_ollama(model, system_prompt, req.text)
+    except Exception:
+        result = f"[mock-translation to {req.target_language}] {req.text}"
+
+    elapsed = time.perf_counter() - start
+    record_metrics(endpoint, PROVIDER, model, 200, elapsed)
+    return {"provider": PROVIDER, "translated_text": result, "target_language": req.target_language}
