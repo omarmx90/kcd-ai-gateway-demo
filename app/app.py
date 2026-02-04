@@ -1,27 +1,39 @@
 import os
 import json
+import time
 from typing import Optional
-from prometheus_client import Counter, Histogram, generate_latest, CONTENT_TYPE_LATEST
-from fastapi import Response, Request
 
 import httpx
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 
-app = FastAPI(title="AI Backend Demo (Ollama + Llama3)")
+from prometheus_client import Counter, Histogram, generate_latest, CONTENT_TYPE_LATEST
+from starlette.responses import Response
 
-REQUESTS = Counter("ai_backend_requests_total", "Total requests", ["path", "method", "status"])
-LATENCY = Histogram("ai_backend_request_latency_seconds", "Request latency", ["path"])
+app = FastAPI(title="AI Backend Demo (Ollama + Llama3)")
 
 OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://host.docker.internal:11434")
 MODEL_CHEAP = os.getenv("MODEL_CHEAP", "llama3")
 MODEL_SMART = os.getenv("MODEL_SMART", "llama3")
+
+REQS = Counter(
+    "ai_backend_requests_total",
+    "Total number of requests",
+    ["endpoint", "status"],
+)
+LAT = Histogram(
+    "ai_backend_request_latency_seconds",
+    "Request latency in seconds",
+    ["endpoint"],
+)
 
 
 class SummarizeRequest(BaseModel):
     text: str
     mode: Optional[str] = "auto"
     max_words: Optional[int] = 50
+    # Demo knob: force CPU work so HPA can scale even if LLM call is mostly I/O
+    cpu_burn_ms: Optional[int] = 0
 
 
 class TranslateRequest(BaseModel):
@@ -31,6 +43,16 @@ class TranslateRequest(BaseModel):
 
 class ModerateRequest(BaseModel):
     text: str
+
+
+def burn_cpu(ms: int) -> None:
+    """Busy-loop for ~ms milliseconds (demo-only)."""
+    if ms <= 0:
+        return
+    end = time.perf_counter() + (ms / 1000.0)
+    x = 0.0
+    while time.perf_counter() < end:
+        x = (x + 1.000001) * 0.999999  # keep CPU busy
 
 
 async def call_ollama(model: str, system_prompt: str, user_prompt: str) -> str:
@@ -51,60 +73,63 @@ async def call_ollama(model: str, system_prompt: str, user_prompt: str) -> str:
         data = resp.json()
         return data["message"]["content"]
 
-@app.middleware("http")
-async def metrics_middleware(request: Request, call_next):
-    path = request.url.path
-    with LATENCY.labels(path=path).time():
-        resp = await call_next(request)
-    REQUESTS.labels(path=path, method=request.method, status=str(resp.status_code)).inc()
-    return resp
-
-
-@app.get("/health")
-async def health():
-    return {"status": "ok", "cheap": MODEL_CHEAP, "smart": MODEL_SMART}
 
 @app.get("/metrics")
 async def metrics():
     return Response(generate_latest(), media_type=CONTENT_TYPE_LATEST)
 
 
+@app.get("/health")
+async def health():
+    return {"status": "ok", "cheap": MODEL_CHEAP, "smart": MODEL_SMART}
+
+
 @app.post("/ai/moderate")
 async def moderate(req: ModerateRequest):
-    system_prompt = (
-        "Classify the following user input for safety. "
-        "Return JSON with allowed:true/false and reason."
-    )
-    user_prompt = req.text
-    raw = await call_ollama(MODEL_CHEAP, system_prompt, user_prompt)
+    endpoint = "/ai/moderate"
+    with LAT.labels(endpoint=endpoint).time():
+        system_prompt = (
+            "Classify the following user input for safety. "
+            "Return JSON with allowed:true/false and reason."
+        )
+        user_prompt = req.text
+        raw = await call_ollama(MODEL_CHEAP, system_prompt, user_prompt)
 
-    try:
-        data = json.loads(raw)
-        allowed = data.get("allowed", True)
-        reason = data.get("reason", "no reason given")
-    except Exception:
-        allowed = True
-        reason = "LLM returned non-JSON; assuming allowed"
+        try:
+            data = json.loads(raw)
+            allowed = data.get("allowed", True)
+            reason = data.get("reason", "no reason given")
+        except Exception:
+            allowed = True
+            reason = "LLM returned non-JSON; assuming allowed"
 
-    return {"allowed": allowed, "reason": reason}
+        REQS.labels(endpoint=endpoint, status="200").inc()
+        return {"allowed": allowed, "reason": reason}
 
 
 @app.post("/ai/summarize")
 async def summarize(req: SummarizeRequest):
-    model = MODEL_CHEAP
+    endpoint = "/ai/summarize"
+    with LAT.labels(endpoint=endpoint).time():
+        burn_cpu(req.cpu_burn_ms or 0)
 
-    if req.mode == "smart":
-        model = MODEL_SMART
+        model = MODEL_CHEAP
+        if req.mode == "smart":
+            model = MODEL_SMART
 
-    system_prompt = (
-        f"You are a summarization assistant. Summarize in {req.max_words} words."
-    )
-    result = await call_ollama(model, system_prompt, req.text)
-    return {"model_used": model, "summary": result}
+        system_prompt = f"You are a summarization assistant. Summarize in {req.max_words} words."
+        result = await call_ollama(model, system_prompt, req.text)
+
+        REQS.labels(endpoint=endpoint, status="200").inc()
+        return {"model_used": model, "summary": result}
 
 
 @app.post("/ai/translate")
 async def translate(req: TranslateRequest):
-    system_prompt = f"You are a translator to {req.target_language}."
-    result = await call_ollama(MODEL_SMART, system_prompt, req.text)
-    return {"translated_text": result, "target_language": req.target_language}
+    endpoint = "/ai/translate"
+    with LAT.labels(endpoint=endpoint).time():
+        system_prompt = f"You are a translator to {req.target_language}."
+        result = await call_ollama(MODEL_SMART, system_prompt, req.text)
+
+        REQS.labels(endpoint=endpoint, status="200").inc()
+        return {"translated_text": result, "target_language": req.target_language}

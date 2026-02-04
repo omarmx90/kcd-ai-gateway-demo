@@ -22,21 +22,23 @@ spec:
           env:
             - name: OLLAMA_BASE_URL
               value: "http://host.docker.internal:11434"
+            - name: MODEL_CHEAP
+              value: "llama3"
+            - name: MODEL_SMART
+              value: "llama3"
           resources:
             requests:
               cpu: "100m"
               memory: "128Mi"
             limits:
               cpu: "500m"
-              memory: "512Mi"
-
+              memory: "256Mi"
           readinessProbe:
             httpGet:
               path: /health
               port: 8000
             initialDelaySeconds: 2
             periodSeconds: 5
-
           livenessProbe:
             httpGet:
               path: /health

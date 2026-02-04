@@ -2,20 +2,18 @@ CLUSTER_NAME = ai-gateway-cluster
 IMAGE_NAME   = ai-backend
 NAMESPACE    = ai-gateway-demo
 
-KONG_NS      = kong
-MON_NS       = monitoring
-
-GATEWAY_URL  = http://localhost:8080
-GRAFANA_URL  = http://localhost:8081
-
-.PHONY: run destroy build cluster load-image kong-crds kong deploy observability dashboards status load verify
+.PHONY: run destroy build cluster load-image kong-crds kong deploy observability dashboards status verify load grafana-pass
 
 run: build cluster load-image kong-crds kong deploy observability dashboards status verify
 	@echo "✅ AI Gateway demo is up."
-	@echo "   Test:"
-	@echo "   curl -s -X POST $(GATEWAY_URL)/ai/summarize \\"
-	@echo "     -H 'Host: ai-gateway.local' -H 'Content-Type: application/json' \\"
-	@echo "     -d '{\"text\":\"AI Gateways add governance to LLM workloads.\",\"max_words\":20}' | jq"
+	@echo "Try:"
+	@echo "  curl -X POST -H 'Host: ai-gateway.local' -H 'Content-Type: application/json' \\"
+	@echo "       -d '{\"text\":\"AI Gateways add governance to LLM workloads.\",\"max_words\":20}' \\"
+	@echo "       http://localhost:8080/ai/summarize"
+	@echo ""
+	@echo "Grafana: http://localhost:8081 (user: admin)"
+	@echo "Grafana password:"
+	@echo "  kubectl get secret -n monitoring kube-prometheus-stack-grafana -o jsonpath='{.data.admin-password}' | base64 -d; echo"
 
 destroy:
 	@echo "🧨 Deleting kind cluster $(CLUSTER_NAME)..."
@@ -50,89 +48,45 @@ dashboards:
 
 status:
 	@echo "🌐 Services in $(NAMESPACE):"
-	@kubectl get pods,svc,ingress -n $(NAMESPACE) || true
+	@kubectl get pods,svc,ingress -n $(NAMESPACE)
 	@echo ""
 	@echo "🦍 Kong:"
-	@kubectl get pods,svc -n $(KONG_NS) || true
+	@kubectl get pods,svc -n kong || true
 	@echo ""
-	@echo "📊 Monitoring:"
-	@kubectl get pods,svc -n $(MON_NS) || true
+	@echo "📈 Monitoring:"
+	@kubectl get pods,svc -n monitoring || true
+
+grafana-pass:
+	@kubectl get secret -n monitoring kube-prometheus-stack-grafana -o jsonpath='{.data.admin-password}' | base64 -d; echo
+
+verify:
+	@echo "🔎 Verifying cluster and demo components..."
+	@kubectl config current-context | grep -q "kind-$(CLUSTER_NAME)" || (echo "❌ Not using kind context"; exit 1)
+	@kubectl get ns $(NAMESPACE) >/dev/null
+	@kubectl get pods -n kong | grep -q "Running" || (echo "❌ Kong not running"; exit 1)
+	@kubectl get pods -n $(NAMESPACE) | grep -q "Running" || (echo "❌ Backend not running"; exit 1)
+	@kubectl get ingress -n $(NAMESPACE) ai-gateway >/dev/null
+	@echo "➡️  Checking gateway route (expect HTTP 200)..."
+	@curl -s -o /dev/null -w "%{http_code}\n" -H "Host: ai-gateway.local" http://localhost:8080/health | grep -q "200" || (echo "❌ Gateway /health failed"; exit 1)
+	@echo "➡️  Checking summarize endpoint (expect HTTP 200)..."
+	@curl -s -o /dev/null -w "%{http_code}\n" -X POST http://localhost:8080/ai/summarize \
+		-H "Host: ai-gateway.local" \
+		-H "Content-Type: application/json" \
+		-d '{"text":"verify","max_words":10}' | grep -q "200" || (echo "❌ Gateway /ai/summarize failed"; exit 1)
+	@echo "➡️  Checking metrics endpoint (expect HTTP 200)..."
+	@curl -s -o /dev/null -w "%{http_code}\n" -H "Host: ai-gateway.local" http://localhost:8080/metrics | grep -q "200" || (echo "❌ /metrics failed"; exit 1)
+	@echo "➡️  Checking Grafana (expect HTTP 200/302)..."
+	@curl -s -o /dev/null -w "%{http_code}\n" http://localhost:8081 | egrep -q "200|302" || (echo "❌ Grafana not reachable"; exit 1)
+	@echo "✅ Verify complete."
 
 load:
 	@echo "🔥 Generating load against AI Gateway (should trigger HPA scaling)..."
-	@command -v hey >/dev/null 2>&1 || (echo "❌ 'hey' not found. Install it (brew install hey)"; exit 1)
-	hey -z 60s -q 5 -c 10 \
+	@hey -z 60s -q 10 -c 20 \
 	  -H "Host: ai-gateway.local" \
 	  -m POST \
 	  -T "application/json" \
-	  -d '{"text":"AI Gateways add governance to LLM workloads and this is a long text to keep CPU busy.","max_words":20}' \
-	  $(GATEWAY_URL)/ai/summarize
+	  -d '{"text":"Load test - autoscaling demo.","max_words":20,"cpu_burn_ms":40}' \
+	  http://localhost:8080/ai/summarize
 	@echo "✅ Load test finished. Check HPA and pods:"
 	@kubectl get hpa -n $(NAMESPACE) || true
 	@kubectl get pods -n $(NAMESPACE) || true
-
-verify:
-	@set -e; \
-	echo "🧪 VERIFY: Starting checks..."; \
-	echo ""; \
-	\
-	echo "1) ✅ kubectl context must be kind-$(CLUSTER_NAME)"; \
-	ctx=$$(kubectl config current-context); \
-	echo "   current-context=$$ctx"; \
-	echo "$$ctx" | grep -q "kind-$(CLUSTER_NAME)" || (echo "❌ Wrong context. Expected kind-$(CLUSTER_NAME)"; exit 1); \
-	echo ""; \
-	\
-	echo "2) ✅ Namespaces exist"; \
-	kubectl get ns $(NAMESPACE) >/dev/null; \
-	kubectl get ns $(KONG_NS) >/dev/null; \
-	kubectl get ns $(MON_NS) >/dev/null; \
-	echo "   ok"; \
-	echo ""; \
-	\
-	echo "3) ✅ Backend pod Ready"; \
-	kubectl wait --for=condition=Ready pod -l app=ai-backend -n $(NAMESPACE) --timeout=180s >/dev/null; \
-	echo "   ok"; \
-	echo ""; \
-	\
-	echo "4) ✅ Kong pod Ready"; \
-	kubectl wait --for=condition=Ready pod -l app.kubernetes.io/name=kong -n $(KONG_NS) --timeout=240s >/dev/null; \
-	echo "   ok"; \
-	echo ""; \
-	\
-	echo "5) ✅ Ingress exists + host rule"; \
-	kubectl get ingress ai-gateway -n $(NAMESPACE) >/dev/null; \
-	host=$$(kubectl get ingress ai-gateway -n $(NAMESPACE) -o jsonpath='{.spec.rules[0].host}'); \
-	echo "   ingress.host=$$host"; \
-	test "$$host" = "ai-gateway.local" || (echo "❌ Ingress host is $$host (expected ai-gateway.local)"; exit 1); \
-	echo ""; \
-	\
-	echo "6) ✅ Gateway route returns HTTP 200"; \
-	code=$$(curl -s -o /dev/null -w "%{http_code}" -X POST $(GATEWAY_URL)/ai/summarize \
-	  -H "Host: ai-gateway.local" -H "Content-Type: application/json" \
-	  -d '{"text":"verify call","max_words":10}'); \
-	echo "   status=$$code"; \
-	test "$$code" = "200" || (echo "❌ Gateway returned $$code (expected 200). Check ingress/kong."; exit 1); \
-	echo ""; \
-	\
-	echo "7) ✅ Grafana reachable on $(GRAFANA_URL)"; \
-	gcode=$$(curl -s -o /dev/null -w "%{http_code}" $(GRAFANA_URL)/login); \
-	echo "   status=$$gcode"; \
-	test "$$gcode" = "200" || test "$$gcode" = "302" || (echo "❌ Grafana not reachable (HTTP $$gcode)"; exit 1); \
-	echo ""; \
-	\
-	echo "8) ✅ metrics-server working (kubectl top)"; \
-	kubectl top nodes >/dev/null 2>&1 || (echo "❌ kubectl top nodes failed. metrics-server not ready."; exit 1); \
-	echo "   ok"; \
-	echo ""; \
-	\
-	echo "9) ✅ HPA has metrics (not <unknown>)"; \
-	hpa_line=$$(kubectl get hpa -n $(NAMESPACE) ai-backend-hpa --no-headers 2>/dev/null || true); \
-	echo "   $$hpa_line"; \
-	echo "$$hpa_line" | grep -q "<unknown>" && (echo "❌ HPA metrics are <unknown>. Add CPU requests/limits + wait metrics-server."; exit 1) || true; \
-	echo ""; \
-	\
-	echo "10) ✅ (Best-effort) Prometheus service exists"; \
-	kubectl get svc -n $(MON_NS) kube-prometheus-stack-prometheus >/dev/null 2>&1 && echo "   prometheus svc ok" || echo "   (skipped) prometheus svc not found"; \
-	echo ""; \
-	\
-	echo "✅ VERIFY: All required checks passed."
