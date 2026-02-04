@@ -111,7 +111,13 @@ async def moderate(req: ModerateRequest):
 async def summarize(req: SummarizeRequest):
     endpoint = "/ai/summarize"
     with LAT.labels(endpoint=endpoint).time():
-        burn_cpu(req.cpu_burn_ms or 0)
+        # Tight CPU burn loop to force CPU usage for HPA demos
+        burn = req.cpu_burn_ms or 0
+        if burn > 0:
+            start = time.time()
+            # Busy-wait loop for approximately burn milliseconds
+            while (time.time() - start) * 1000 < burn:
+                pass
 
         model = MODEL_CHEAP
         if req.mode == "smart":

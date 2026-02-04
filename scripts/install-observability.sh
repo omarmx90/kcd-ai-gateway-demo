@@ -23,7 +23,12 @@ kubectl create namespace monitoring 2>/dev/null || true
 helm upgrade --install kube-prometheus-stack prometheus-community/kube-prometheus-stack \
   --namespace monitoring \
   --set grafana.service.type=NodePort \
-  --set grafana.service.nodePort=32081
+  --set grafana.service.nodePort=32081 \
+  --set prometheus.service.type=ClusterIP \
+  --wait
+
+# Ensure Grafana is rolled out before verify runs
+kubectl -n monitoring rollout status deploy/kube-prometheus-stack-grafana --timeout=300s || true
 
 echo "✅ Observability installed."
 echo "   - Grafana: http://localhost:8081"

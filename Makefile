@@ -75,18 +75,21 @@ verify:
 		-d '{"text":"verify","max_words":10}' | grep -q "200" || (echo "❌ Gateway /ai/summarize failed"; exit 1)
 	@echo "➡️  Checking metrics endpoint (expect HTTP 200)..."
 	@curl -s -o /dev/null -w "%{http_code}\n" -H "Host: ai-gateway.local" http://localhost:8080/metrics | grep -q "200" || (echo "❌ /metrics failed"; exit 1)
+	@echo "⏳ Waiting for Grafana readiness (HTTP 200/302)..."
+	@tries=0; until [ $$tries -ge 30 ]; do code=$$(curl -s -o /dev/null -w "%{http_code}" http://localhost:8081 || true); echo "   Grafana HTTP $$code"; echo $$code | egrep -q "200|302" && break; tries=$$((tries+1)); sleep 4; done; [ $$tries -lt 30 ] || (echo "❌ Grafana not reachable in time"; exit 1)
 	@echo "➡️  Checking Grafana (expect HTTP 200/302)..."
 	@curl -s -o /dev/null -w "%{http_code}\n" http://localhost:8081 | egrep -q "200|302" || (echo "❌ Grafana not reachable"; exit 1)
 	@echo "✅ Verify complete."
 
 load:
-	@echo "🔥 Generating load against AI Gateway (should trigger HPA scaling)..."
-	@hey -z 60s -q 10 -c 20 \
-	  -H "Host: ai-gateway.local" \
+	@echo "🔥 Generating HEAVY CPU load (forces HPA scaling)..."
+	@hey -z 60s -c 60 -q 60 \
+	  -host ai-gateway.local \
 	  -m POST \
 	  -T "application/json" \
-	  -d '{"text":"Load test - autoscaling demo.","max_words":20,"cpu_burn_ms":40}' \
+	  -d '{"text":"autoscaling demo","max_words":20,"cpu_burn_ms":300}' \
 	  http://localhost:8080/ai/summarize
-	@echo "✅ Load test finished. Check HPA and pods:"
-	@kubectl get hpa -n $(NAMESPACE) || true
-	@kubectl get pods -n $(NAMESPACE) || true
+	@echo "\n📈 HPA status:"
+	@kubectl get hpa -n $(NAMESPACE)
+	@echo "\n🚀 Pods:"
+	@kubectl get pods -n $(NAMESPACE)
