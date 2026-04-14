@@ -48,6 +48,25 @@ spec:
                   name: ai-llm-credentials
                   key: google-api-key
                   optional: true
+            - name: AI_FAILOVER_ENABLED
+              value: "true"
+            - name: AI_FAILOVER_CHAIN
+              value: "openai,gemini,ollama"
+            - name: CLOUD_PROVIDER_FOR_PREMIUM
+              value: "openai"
+            - name: DEMO_SIMULATE_OPENAI_STATUS
+              value: ""
+            # Set to "true" during live talks to block all paid OpenAI/Gemini HTTP calls (Ollama still works).
+            - name: CLOUD_LLM_CALLS_DISABLED
+              value: "false"
+            # Successful cloud API calls per provider per pod (0 = unlimited). Use 1 + 1 for a capped keynote.
+            - name: OPENAI_DEMO_QUOTA
+              value: "0"
+            - name: GEMINI_DEMO_QUOTA
+              value: "0"
+            # Optional: merge JSON overrides for FinOps cost_estimate, e.g. {"gpt-4o-mini":{"input":0.15,"output":0.60}}
+            # - name: LLM_PRICING_OVERRIDES_JSON
+            #   value: '{}'
           resources:
             requests:
               cpu: "150m"

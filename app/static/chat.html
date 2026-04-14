@@ -1,0 +1,492 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>AI Gateway — Chat demo</title>
+  <style>
+    :root {
+      --bg: #0c0f14;
+      --surface: #151a22;
+      --surface2: #1c2330;
+      --border: #2a3444;
+      --text: #e8edf5;
+      --muted: #8b98ad;
+      --accent: #3d8bfd;
+      --accent-dim: #2563c4;
+      --user: #1e3a5f;
+      --assistant: #1a2636;
+      --ok: #34d399;
+      --warn: #fbbf24;
+      --radius: 12px;
+      --font: "Segoe UI", system-ui, -apple-system, sans-serif;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: var(--font);
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.45;
+    }
+    .layout {
+      display: grid;
+      grid-template-columns: 280px 1fr;
+      min-height: 100vh;
+    }
+    @media (max-width: 900px) {
+      .layout { grid-template-columns: 1fr; }
+      aside { border-right: none; border-bottom: 1px solid var(--border); }
+    }
+    aside {
+      background: var(--surface);
+      border-right: 1px solid var(--border);
+      padding: 1.25rem;
+      display: flex;
+      flex-direction: column;
+      gap: 1rem;
+    }
+    aside h1 {
+      font-size: 1rem;
+      font-weight: 600;
+      margin: 0 0 0.25rem 0;
+      letter-spacing: 0.02em;
+    }
+    aside .sub {
+      font-size: 0.8rem;
+      color: var(--muted);
+      margin: 0 0 1rem 0;
+    }
+    label {
+      display: block;
+      font-size: 0.72rem;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--muted);
+      margin-bottom: 0.35rem;
+    }
+    input[type="text"], select, textarea {
+      width: 100%;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      color: var(--text);
+      border-radius: 8px;
+      padding: 0.5rem 0.65rem;
+      font-size: 0.9rem;
+    }
+    input:focus, select:focus, textarea:focus {
+      outline: 2px solid var(--accent);
+      outline-offset: 1px;
+    }
+    .row { margin-bottom: 0.75rem; }
+    .tabs {
+      display: flex;
+      gap: 0.35rem;
+      flex-wrap: wrap;
+    }
+    .tabs button {
+      flex: 1;
+      min-width: 0;
+      padding: 0.45rem 0.5rem;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      background: var(--surface2);
+      color: var(--muted);
+      font-size: 0.8rem;
+      cursor: pointer;
+    }
+    .tabs button.active {
+      background: var(--accent-dim);
+      color: #fff;
+      border-color: var(--accent);
+    }
+    .hint {
+      font-size: 0.75rem;
+      color: var(--muted);
+      margin-top: 0.5rem;
+    }
+    main {
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+      min-height: 480px;
+    }
+    .thread {
+      flex: 1;
+      overflow-y: auto;
+      padding: 1.25rem 1.5rem;
+      display: flex;
+      flex-direction: column;
+      gap: 1rem;
+    }
+    .bubble {
+      max-width: min(720px, 92%);
+      padding: 0.85rem 1rem;
+      border-radius: var(--radius);
+      border: 1px solid var(--border);
+    }
+    .bubble.user {
+      align-self: flex-end;
+      background: var(--user);
+    }
+    .bubble.assistant {
+      align-self: flex-start;
+      background: var(--assistant);
+    }
+    .bubble .role {
+      font-size: 0.7rem;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--muted);
+      margin-bottom: 0.4rem;
+    }
+    .bubble .body { white-space: pre-wrap; word-break: break-word; }
+    .meta {
+      margin-top: 0.75rem;
+      padding-top: 0.75rem;
+      border-top: 1px solid var(--border);
+      font-size: 0.78rem;
+      color: var(--muted);
+    }
+    .meta summary {
+      cursor: pointer;
+      color: var(--accent);
+      user-select: none;
+    }
+    .meta pre {
+      margin: 0.5rem 0 0 0;
+      padding: 0.6rem;
+      background: var(--bg);
+      border-radius: 8px;
+      overflow-x: auto;
+      font-size: 0.72rem;
+    }
+    .chips {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.35rem;
+      margin-top: 0.5rem;
+    }
+    .chip {
+      font-size: 0.7rem;
+      padding: 0.2rem 0.45rem;
+      border-radius: 6px;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+    }
+    .composer {
+      border-top: 1px solid var(--border);
+      padding: 1rem 1.5rem;
+      background: var(--surface);
+    }
+    .composer-inner {
+      max-width: 800px;
+      margin: 0 auto;
+      display: flex;
+      flex-direction: column;
+      gap: 0.6rem;
+    }
+    .translate-row { display: none; }
+    .translate-row.visible { display: block; }
+    .maxw-row { display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap; }
+    .maxw-row input[type="range"] { flex: 1; min-width: 120px; }
+    .actions {
+      display: flex;
+      gap: 0.5rem;
+      justify-content: flex-end;
+    }
+    button.primary {
+      background: linear-gradient(180deg, var(--accent), var(--accent-dim));
+      color: #fff;
+      border: none;
+      padding: 0.55rem 1.25rem;
+      border-radius: 8px;
+      font-weight: 600;
+      cursor: pointer;
+      font-size: 0.9rem;
+    }
+    button.primary:disabled { opacity: 0.5; cursor: not-allowed; }
+    button.ghost {
+      background: transparent;
+      color: var(--muted);
+      border: 1px solid var(--border);
+      padding: 0.5rem 0.85rem;
+      border-radius: 8px;
+      cursor: pointer;
+    }
+    .error {
+      color: #f87171;
+      font-size: 0.85rem;
+      margin: 0;
+    }
+    .welcome {
+      align-self: center;
+      text-align: center;
+      max-width: 420px;
+      color: var(--muted);
+      font-size: 0.9rem;
+      padding: 2rem;
+    }
+    .welcome strong { color: var(--text); }
+  </style>
+</head>
+<body>
+  <div class="layout">
+    <aside>
+      <h1>AI Gateway</h1>
+      <p class="sub">Chat demo — traffic goes through Kong (rate limit, cost router, PII). Responses use your live <code style="font-size:0.75em;">/ai/*</code> APIs.</p>
+
+      <div class="tabs" role="tablist">
+        <button type="button" class="tab active" data-mode="summarize">Summarize</button>
+        <button type="button" class="tab" data-mode="translate">Translate</button>
+        <button type="button" class="tab" data-mode="moderate">Moderate</button>
+      </div>
+
+      <div class="row">
+        <label for="appId">X-Application-Id</label>
+        <input id="appId" type="text" value="chat-demo-ui" autocomplete="off" />
+      </div>
+      <div class="row">
+        <label for="priority">Gateway priority (cost router)</label>
+        <select id="priority">
+          <option value="">Auto (text length)</option>
+          <option value="low">Low → local / economical</option>
+          <option value="high">High → premium cloud</option>
+        </select>
+      </div>
+      <div class="row">
+        <label for="provider">Provider override (optional)</label>
+        <select id="provider">
+          <option value="">Use gateway routing</option>
+          <option value="ollama">ollama</option>
+          <option value="openai">openai</option>
+          <option value="gemini">gemini</option>
+        </select>
+      </div>
+      <div class="row">
+        <label for="tier">Tier (when provider set or default path)</label>
+        <select id="tier">
+          <option value="">Default</option>
+          <option value="cheap">cheap</option>
+          <option value="smart">smart</option>
+        </select>
+      </div>
+      <div class="row maxw-row" id="maxWordsRow">
+        <label for="maxWords" style="margin:0;">Max words</label>
+        <input id="maxWords" type="range" min="10" max="200" value="50" />
+        <span id="maxWordsVal">50</span>
+      </div>
+      <div class="row translate-row" id="translateRow">
+        <label for="lang">Target language</label>
+        <select id="lang">
+          <option value="Spanish">Spanish</option>
+          <option value="French">French</option>
+          <option value="German">German</option>
+          <option value="Japanese">Japanese</option>
+          <option value="English">English</option>
+        </select>
+      </div>
+      <p class="hint">Try PII in text (e.g. an email) and watch Kong sanitize before the model sees it. Open Grafana to correlate <code style="font-size:0.75em;">ai_*</code> metrics.</p>
+    </aside>
+
+    <main>
+      <div class="thread" id="thread" aria-live="polite">
+        <div class="welcome" id="welcome">
+          <strong>KCD Guadalajara — AI Gateway patterns</strong><br /><br />
+          Choose a mode, adjust gateway headers, then send a message. Each reply includes routing and cost metadata from the API.
+        </div>
+      </div>
+      <div class="composer">
+        <div class="composer-inner">
+          <textarea id="input" rows="3" placeholder="Your message…"></textarea>
+          <p class="error" id="err" hidden></p>
+          <div class="actions">
+            <button type="button" class="ghost" id="clearBtn">Clear thread</button>
+            <button type="button" class="primary" id="sendBtn">Send</button>
+          </div>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <script>
+(function () {
+  const thread = document.getElementById("thread");
+  const welcome = document.getElementById("welcome");
+  const input = document.getElementById("input");
+  const sendBtn = document.getElementById("sendBtn");
+  const clearBtn = document.getElementById("clearBtn");
+  const err = document.getElementById("err");
+  const appId = document.getElementById("appId");
+  const priority = document.getElementById("priority");
+  const provider = document.getElementById("provider");
+  const tier = document.getElementById("tier");
+  const maxWords = document.getElementById("maxWords");
+  const maxWordsVal = document.getElementById("maxWordsVal");
+  const maxWordsRow = document.getElementById("maxWordsRow");
+  const translateRow = document.getElementById("translateRow");
+  const lang = document.getElementById("lang");
+
+  let mode = "summarize";
+
+  function headers() {
+    const h = {
+      "Content-Type": "application/json",
+      "X-Application-Id": appId.value.trim() || "chat-demo-ui",
+    };
+    const p = priority.value;
+    if (p) h["X-Priority"] = p;
+    return h;
+  }
+
+  function optionalBodyFields() {
+    const o = {};
+    const prov = provider.value;
+    const t = tier.value;
+    if (prov) o.provider = prov;
+    if (t) o.tier = t;
+    return o;
+  }
+
+  maxWords.addEventListener("input", () => {
+    maxWordsVal.textContent = maxWords.value;
+  });
+
+  document.querySelectorAll(".tab").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      mode = btn.dataset.mode;
+      document.querySelectorAll(".tab").forEach((b) => b.classList.remove("active"));
+      btn.classList.add("active");
+      maxWordsRow.style.display = mode === "summarize" ? "flex" : "none";
+      translateRow.classList.toggle("visible", mode === "translate");
+      input.placeholder =
+        mode === "summarize"
+          ? "Paste text to summarize…"
+          : mode === "translate"
+            ? "Text to translate…"
+            : "Text to classify (moderation)…";
+    });
+  });
+
+  function hideWelcome() {
+    if (welcome && welcome.parentNode) welcome.remove();
+  }
+
+  function addBubble(role, text, metaObj) {
+    hideWelcome();
+    const wrap = document.createElement("div");
+    wrap.className = "bubble " + (role === "user" ? "user" : "assistant");
+    const r = document.createElement("div");
+    r.className = "role";
+    r.textContent = role === "user" ? "You" : "Assistant";
+    const body = document.createElement("div");
+    body.className = "body";
+    body.textContent = text;
+    wrap.appendChild(r);
+    wrap.appendChild(body);
+
+    if (metaObj && role === "assistant") {
+      const chips = document.createElement("div");
+      chips.className = "chips";
+      [
+        ["provider", metaObj.provider],
+        ["model", metaObj.model_used],
+        ["routing", metaObj.routing && (metaObj.routing.source + (metaObj.routing.rule ? " · " + metaObj.routing.rule : ""))],
+      ].forEach(([k, v]) => {
+        if (v == null || v === "") return;
+        const c = document.createElement("span");
+        c.className = "chip";
+        c.textContent = k + ": " + v;
+        chips.appendChild(c);
+      });
+      wrap.appendChild(chips);
+
+      const meta = document.createElement("div");
+      meta.className = "meta";
+      const det = document.createElement("details");
+      const s = document.createElement("summary");
+      s.textContent = "Full JSON (routing, cost estimate, failover)";
+      const pre = document.createElement("pre");
+      pre.textContent = JSON.stringify(metaObj, null, 2);
+      det.appendChild(s);
+      det.appendChild(pre);
+      meta.appendChild(det);
+      wrap.appendChild(meta);
+    }
+
+    thread.appendChild(wrap);
+    thread.scrollTop = thread.scrollHeight;
+  }
+
+  async function send() {
+    const text = input.value.trim();
+    if (!text) return;
+    err.hidden = true;
+    sendBtn.disabled = true;
+    addBubble("user", text);
+
+    const h = headers();
+    let url;
+    let body;
+
+    if (mode === "summarize") {
+      url = "/ai/summarize";
+      body = { text, max_words: parseInt(maxWords.value, 10), ...optionalBodyFields() };
+    } else if (mode === "translate") {
+      url = "/ai/translate";
+      body = { text, target_language: lang.value, ...optionalBodyFields() };
+    } else {
+      url = "/ai/moderate";
+      body = { text, ...optionalBodyFields() };
+    }
+
+    try {
+      const res = await fetch(url, { method: "POST", headers: h, body: JSON.stringify(body) });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        const msg = data.detail != null ? (typeof data.detail === "string" ? data.detail : JSON.stringify(data.detail)) : res.statusText;
+        throw new Error(msg || "Request failed");
+      }
+
+      let display;
+      let metaPayload = { ...data };
+      if (mode === "summarize") {
+        display = data.summary || "";
+      } else if (mode === "translate") {
+        display = data.translated_text || "";
+      } else {
+        display = (data.allowed ? "Allowed" : "Blocked") + " — " + (data.reason || "");
+        metaPayload = { ...data };
+      }
+      addBubble("assistant", display, metaPayload);
+      input.value = "";
+    } catch (e) {
+      err.textContent = e.message || String(e);
+      err.hidden = false;
+    } finally {
+      sendBtn.disabled = false;
+    }
+  }
+
+  sendBtn.addEventListener("click", send);
+  input.addEventListener("keydown", (ev) => {
+    if (ev.key === "Enter" && (ev.ctrlKey || ev.metaKey)) {
+      ev.preventDefault();
+      send();
+    }
+  });
+
+  clearBtn.addEventListener("click", () => {
+    thread.innerHTML = "";
+    err.hidden = true;
+    const w = document.createElement("div");
+    w.className = "welcome";
+    w.id = "welcome";
+    w.innerHTML = "<strong>KCD Guadalajara — AI Gateway patterns</strong><br /><br />Choose a mode, adjust gateway headers, then send a message.";
+    thread.appendChild(w);
+  });
+})();
+  </script>
+</body>
+</html>

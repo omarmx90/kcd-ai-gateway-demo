@@ -1,46 +1,261 @@
 {
   "uid": "ai-backend-demo",
   "title": "AI Gateway - Backend Metrics",
+  "tags": ["kcd", "ai-gateway", "backend", "finops"],
   "timezone": "browser",
   "schemaVersion": 39,
-  "version": 1,
+  "version": 5,
   "refresh": "5s",
+  "time": { "from": "now-30m", "to": "now" },
+  "templating": {
+    "list": [
+      {
+        "name": "DS_PROMETHEUS",
+        "type": "datasource",
+        "label": "Prometheus",
+        "query": "prometheus",
+        "refresh": 1,
+        "current": {}
+      }
+    ]
+  },
   "panels": [
     {
-      "id": 1,
-      "type": "timeseries",
-      "title": "AI Requests / sec by endpoint + model",
-      "gridPos": { "x": 0, "y": 8, "w": 24, "h": 8 },
-      "targets": [
-        {
-          "expr": "sum by (endpoint, model) (rate(ai_requests_total[1m]))",
-          "legendFormat": "{{endpoint}} | {{model}}"
-        }
-      ]
+      "id": 100,
+      "type": "row",
+      "title": "Traffic & governance",
+      "gridPos": { "x": 0, "y": 0, "w": 24, "h": 1 },
+      "collapsed": false
     },
     {
       "id": 2,
       "type": "timeseries",
-      "title": "PII Redactions / sec (gateway policy)",
-      "gridPos": { "x": 0, "y": 0, "w": 24, "h": 8 },
+      "title": "PII redactions / sec (Kong → backend header)",
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "gridPos": { "x": 0, "y": 1, "w": 24, "h": 7 },
       "targets": [
         {
+          "refId": "A",
           "expr": "rate(ai_pii_redactions_total[1m])",
-          "legendFormat": "redactions/sec"
+          "legendFormat": "redactions/s"
         }
-      ]
+      ],
+      "options": { "legend": { "showLegend": true } }
+    },
+    {
+      "id": 1,
+      "type": "timeseries",
+      "title": "Requests / sec by endpoint + model (ai_requests_total)",
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "gridPos": { "x": 0, "y": 8, "w": 16, "h": 7 },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (endpoint, model) (rate(ai_requests_total[1m]))",
+          "legendFormat": "{{endpoint}} | {{model}}"
+        }
+      ],
+      "options": { "legend": { "showLegend": true } }
+    },
+    {
+      "id": 9,
+      "type": "timeseries",
+      "title": "Requests / sec by status_code",
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "gridPos": { "x": 16, "y": 8, "w": 8, "h": 7 },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (status_code) (rate(ai_requests_total[1m]))",
+          "legendFormat": "HTTP {{status_code}}"
+        }
+      ],
+      "options": { "legend": { "showLegend": true } }
+    },
+    {
+      "id": 101,
+      "type": "row",
+      "title": "Latency",
+      "gridPos": { "x": 0, "y": 15, "w": 24, "h": 1 },
+      "collapsed": false
+    },
+    {
+      "id": 4,
+      "type": "timeseries",
+      "title": "p95 latency by provider (ai_request_latency_seconds)",
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "gridPos": { "x": 0, "y": 16, "w": 12, "h": 7 },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "histogram_quantile(0.95, sum by (le, provider) (rate(ai_request_latency_seconds_bucket[5m])))",
+          "legendFormat": "{{provider}}"
+        }
+      ],
+      "options": { "legend": { "showLegend": true } }
+    },
+    {
+      "id": 10,
+      "type": "timeseries",
+      "title": "p95 latency by endpoint (ai_request_latency_seconds)",
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "gridPos": { "x": 12, "y": 16, "w": 12, "h": 7 },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "histogram_quantile(0.95, sum by (le, endpoint) (rate(ai_request_latency_seconds_bucket[5m])))",
+          "legendFormat": "{{endpoint}}"
+        }
+      ],
+      "options": { "legend": { "showLegend": true } }
+    },
+    {
+      "id": 102,
+      "type": "row",
+      "title": "Resilience & tenants",
+      "gridPos": { "x": 0, "y": 23, "w": 24, "h": 1 },
+      "collapsed": false
+    },
+    {
+      "id": 5,
+      "type": "timeseries",
+      "title": "Failover events / sec (ai_llm_failover_total)",
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "gridPos": { "x": 0, "y": 24, "w": 12, "h": 7 },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (from_provider, to_provider) (rate(ai_llm_failover_total[1m]))",
+          "legendFormat": "{{from_provider}} → {{to_provider}}"
+        }
+      ],
+      "options": { "legend": { "showLegend": true } }
+    },
+    {
+      "id": 6,
+      "type": "timeseries",
+      "title": "Requests / sec by X-Application-Id (ai_requests_per_application_total)",
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "gridPos": { "x": 12, "y": 24, "w": 12, "h": 7 },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (application_id) (rate(ai_requests_per_application_total[1m]))",
+          "legendFormat": "{{application_id}}"
+        }
+      ],
+      "options": { "legend": { "showLegend": true } }
+    },
+    {
+      "id": 103,
+      "type": "row",
+      "title": "FinOps (heuristic — not invoices)",
+      "gridPos": { "x": 0, "y": 31, "w": 24, "h": 1 },
+      "collapsed": false
+    },
+    {
+      "id": 7,
+      "type": "timeseries",
+      "title": "Estimated spend USD/s by provider + model (ai_estimated_cost_microdollars_total)",
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "gridPos": { "x": 0, "y": 32, "w": 14, "h": 7 },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (provider, model) (rate(ai_estimated_cost_microdollars_total[5m]) / 1000000)",
+          "legendFormat": "{{provider}} / {{model}}"
+        }
+      ],
+      "options": { "legend": { "showLegend": true } }
+    },
+    {
+      "id": 11,
+      "type": "timeseries",
+      "title": "p95 estimated $ per request by route (ai_estimated_request_cost_usd)",
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "gridPos": { "x": 14, "y": 32, "w": 10, "h": 7 },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "histogram_quantile(0.95, sum by (le, endpoint, provider, model) (rate(ai_estimated_request_cost_usd_bucket[5m])))",
+          "legendFormat": "{{endpoint}} | {{provider}} / {{model}}"
+        }
+      ],
+      "options": { "legend": { "showLegend": true } }
+    },
+    {
+      "id": 8,
+      "type": "timeseries",
+      "title": "Estimated tokens/s in+out (ai_estimated_input_tokens_total / output)",
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "gridPos": { "x": 0, "y": 39, "w": 24, "h": 7 },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (provider, model) (rate(ai_estimated_input_tokens_total[5m]))",
+          "legendFormat": "in {{provider}} / {{model}}"
+        },
+        {
+          "refId": "B",
+          "expr": "sum by (provider, model) (rate(ai_estimated_output_tokens_total[5m]))",
+          "legendFormat": "out {{provider}} / {{model}}"
+        }
+      ],
+      "options": { "legend": { "showLegend": true } }
+    },
+    {
+      "id": 12,
+      "type": "timeseries",
+      "title": "p95 prompt size (chars) by endpoint (ai_estimated_input_chars)",
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "gridPos": { "x": 0, "y": 46, "w": 24, "h": 7 },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "histogram_quantile(0.95, sum by (le, endpoint, provider) (rate(ai_estimated_input_chars_bucket[5m])))",
+          "legendFormat": "{{endpoint}} | {{provider}}"
+        }
+      ],
+      "options": { "legend": { "showLegend": true } }
+    },
+    {
+      "id": 13,
+      "type": "stat",
+      "title": "Cumulative est. spend (USD) — sum(ai_estimated_cost_microdollars_total)/1e6",
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "gridPos": { "x": 0, "y": 53, "w": 6, "h": 4 },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(ai_estimated_cost_microdollars_total) / 1000000",
+          "legendFormat": "USD"
+        }
+      ],
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] } }
     },
     {
       "id": 3,
       "type": "piechart",
-      "title": "Moderation Decisions (blocked vs allowed)",
-      "gridPos": { "x": 0, "y": 16, "w": 12, "h": 7 },
+      "title": "Moderation decisions (ai_moderation_decisions_total)",
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "gridPos": { "x": 6, "y": 53, "w": 10, "h": 7 },
       "targets": [
         {
-          "expr": "sum by (decision) (increase(ai_moderation_decisions_total[5m]))",
+          "refId": "A",
+          "expr": "sum by (decision) (increase(ai_moderation_decisions_total[15m]))",
           "legendFormat": "{{decision}}"
         }
       ]
+    },
+    {
+      "id": 99,
+      "type": "text",
+      "title": "Metric coverage checklist",
+      "gridPos": { "x": 16, "y": 53, "w": 8, "h": 7 },
+      "options": {
+        "content": "**Counters:** ai_requests_total, ai_pii_redactions_total, ai_moderation_decisions_total, ai_llm_failover_total, ai_requests_per_application_total, ai_estimated_cost_microdollars_total, ai_estimated_input_tokens_total, ai_estimated_output_tokens_total  \n**Histograms:** ai_request_latency_seconds, ai_estimated_input_chars, ai_estimated_request_cost_usd  \nScrape: ServiceMonitor `ai-backend` in `monitoring` → target `ai-gateway-demo/ai-backend:80/metrics`",
+        "mode": "markdown"
+      }
     }
   ]
 }

@@ -5,7 +5,7 @@ metadata:
   namespace: ai-gateway-demo
   annotations:
     konghq.com/strip-path: "false"
-    konghq.com/plugins: "pii-sanitizer"
+    konghq.com/plugins: "rate-limit-by-app,cost-router,pii-sanitizer"
 spec:
   ingressClassName: kong
   rules:
@@ -27,6 +27,13 @@ spec:
                 port:
                   number: 80
           - path: /ai/moderate
+            pathType: Prefix
+            backend:
+              service:
+                name: ai-backend
+                port:
+                  number: 80
+          - path: /chat
             pathType: Prefix
             backend:
               service:

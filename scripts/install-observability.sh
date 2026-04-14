@@ -26,6 +26,9 @@ helm upgrade --install kube-prometheus-stack prometheus-community/kube-prometheu
 
 kubectl -n monitoring rollout status deploy/kube-prometheus-stack-grafana --timeout=300s || true
 
+REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+echo "Applying ServiceMonitor for ai-backend (/metrics scrape)..."
+kubectl apply -f "${REPO_ROOT}/k8s/servicemonitor-backend.yaml"
 echo "✅ Observability installed."
 echo "   - Grafana: http://localhost:8081"
 echo "   - Get Grafana password:"

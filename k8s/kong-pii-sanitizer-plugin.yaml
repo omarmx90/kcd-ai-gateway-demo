@@ -25,6 +25,14 @@ config:
         end
 
         local text = tostring(body.text)
+        -- Compliance: block likely payment card numbers before any upstream LLM
+        local card = ngx.re.match(text, [[(?:\d{4}[-\s]?){3}\d{4}]], "jo")
+        if card then
+          return kong.response.exit(403,
+            '{"error":"request_blocked","reason":"payment_number_pattern","detail":"Gateway policy: card-like sequence not allowed toward cloud LLMs"}',
+            {["Content-Type"] = "application/json; charset=utf-8"})
+        end
+
         local redactions = 0
         -- Use PCRE for robust patterns
         local function re_redact(pcre, replacement)
