@@ -2,7 +2,7 @@ CLUSTER_NAME = ai-gateway-cluster
 IMAGE_NAME   = ai-backend
 NAMESPACE    = ai-gateway-demo
 
-.PHONY: run destroy build cluster load-image kong-crds kong deploy observability dashboards status verify load grafana-pass
+.PHONY: run destroy build cluster load-image kong-crds kong deploy observability dashboards status verify load grafana-pass llm-secret
 
 run: build cluster load-image kong-crds kong deploy observability dashboards status verify
 	@echo "✅ AI Gateway demo is up."
@@ -58,6 +58,9 @@ status:
 
 grafana-pass:
 	@kubectl get secret -n monitoring kube-prometheus-stack-grafana -o jsonpath='{.data.admin-password}' | base64 -d; echo
+
+llm-secret:
+	@./scripts/create-llm-secret-from-env.sh
 
 verify:
 	@echo "🔎 Verifying cluster and demo components..."

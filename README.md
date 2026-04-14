@@ -41,11 +41,51 @@ This project shows how to turn a traditional API Gateway into an AI Gateway on K
   - PII sanitizer policy (pre-function) that redacts emails/phones/SSN in request body
 - FastAPI backend with:
   - Endpoints `/ai/summarize`, `/ai/translate`, `/ai/moderate`, `/health`, `/metrics`
+  - Multi-vendor LLMs: Ollama (default), OpenAI (ChatGPT API), Gemini (Google AI Studio) via JSON fields `provider` and `tier` (`cheap` | `smart`)
   - Demo CPU burn knob (`cpu_burn_ms`) to trigger HPA
   - Prometheus metrics (`/metrics`) with request and PII counters
 - Observability stack (kube-prometheus-stack: Prometheus + Grafana)
 - HPA configured for the backend
 - Makefile automation for the full flow
+
+## Cloud LLM keys (OpenAI + Gemini)
+
+**Recommended (no secrets in files):** export variables in your terminal, then create the Kubernetes Secret from literals (values stay in your shell / process list only — avoid shared machines and shell logging if you paste keys).
+
+```bash
+export OPENAI_API_KEY="sk-..."           # ChatGPT API
+export GOOGLE_API_KEY="..."              # Gemini (Google AI Studio); or use GEMINI_API_KEY
+./scripts/create-llm-secret-from-env.sh
+kubectl rollout restart deployment/ai-backend -n ai-gateway-demo
+```
+
+You can export **only one** of the two if you only need a single provider; the script adds whichever keys are set.
+
+Equivalent **one-liner** (bash), sin script:
+
+```bash
+kubectl create secret generic ai-llm-credentials \
+  --from-literal=openai-api-key="$OPENAI_API_KEY" \
+  --from-literal=google-api-key="$GOOGLE_API_KEY" \
+  -n ai-gateway-demo --dry-run=client -o yaml | kubectl apply -f -
+```
+
+**PowerShell** (Windows):
+
+```powershell
+$env:OPENAI_API_KEY = "sk-..."
+$env:GOOGLE_API_KEY = "..."
+kubectl create secret generic ai-llm-credentials `
+  --from-literal=openai-api-key=$env:OPENAI_API_KEY `
+  --from-literal=google-api-key=$env:GOOGLE_API_KEY `
+  -n ai-gateway-demo --dry-run=client -o yaml | kubectl apply -f -
+```
+
+**Alternative:** copy `k8s/secret-llm-keys.example.yaml` to `k8s/secret-llm-keys.local.yaml` (gitignored), edit, `kubectl apply -f` that file.
+
+Confirm readiness: `curl -s http://localhost:8080/health -H "Host: ai-gateway.local" | jq` — `openai.configured` and `gemini.configured` should be `true` after restart.
+
+Default model IDs (override via env in `k8s/deploy-backend.yaml`): OpenAI `gpt-4o-mini` / `gpt-4o`; Gemini `gemini-2.0-flash` / `gemini-1.5-pro`.
 
 ## Prerequisites
 - Docker Desktop or Docker Engine
@@ -80,6 +120,7 @@ On success, you’ll see curl tips and how to fetch the Grafana password.
 - `make status`: Show Pods/Services/Ingress in app, kong, and monitoring namespaces
 - `make dashboards`: Re-apply Grafana dashboards ConfigMaps
 - `make destroy`: Delete the kind cluster
+- `make llm-secret`: Create/update `ai-llm-credentials` from `OPENAI_API_KEY` and/or `GOOGLE_API_KEY` (or `GEMINI_API_KEY`)
 
 ## Endpoints through the Gateway
 
@@ -93,6 +134,21 @@ On success, you’ll see curl tips and how to fetch the Grafana password.
     -H "Host: ai-gateway.local" -H "Content-Type: application/json" \
     -d '{"text":"AI Gateways add governance to LLM workloads.","max_words":20}'
   ```
+- Same call with **ChatGPT cheap vs expensive** (after configuring the secret):
+  ```bash
+  # Economical tier (e.g. gpt-4o-mini)
+  curl -s -X POST http://localhost:8080/ai/summarize \
+    -H "Host: ai-gateway.local" -H "Content-Type: application/json" \
+    -d '{"provider":"openai","tier":"cheap","text":"Explain Kubernetes Operators in two sentences.","max_words":40}'
+  ```
+  ```bash
+  # Higher tier (e.g. gpt-4o)
+  curl -s -X POST http://localhost:8080/ai/summarize \
+    -H "Host: ai-gateway.local" -H "Content-Type: application/json" \
+    -d '{"provider":"openai","tier":"smart","text":"Explain Kubernetes Operators in two sentences.","max_words":40}'
+  ```
+- **Gemini** the same way: `"provider":"gemini","tier":"cheap"` or `"tier":"smart"`.
+- Backward-compatible: `mode":"smart"` still maps to the smart tier when `tier` is omitted (Ollama or cloud).
 - Metrics (proxied):
   ```bash
   curl -s -H "Host: ai-gateway.local" http://localhost:8080/metrics | head
@@ -148,12 +204,14 @@ kubectl get pods -n ai-gateway-demo
 - `Makefile`: full automation (build, cluster, kong, deploy, observability, verify, load)
 - `k8s/ingress-gateway.yaml`: Kong Ingress (routes `/health`, `/metrics`, and `/ai/*`)
 - `k8s/kong-pii-sanitizer-plugin.yaml`: PII redaction pre-function (Lua) policy
-- `k8s/deploy-backend.yaml`: Deployment with CPU requests/limits and `PROVIDER` env
+- `k8s/deploy-backend.yaml`: Deployment with CPU requests/limits, `PROVIDER`, and optional `ai-llm-credentials` secret refs
+- `k8s/secret-llm-keys.example.yaml`: template for OpenAI + Gemini API keys (copy to `secret-llm-keys.local.yaml`, gitignored)
 - `k8s/service-backend.yaml`: Service exposing port 80 → container 8000
 - `k8s/servicemonitor-backend.yaml`: Prometheus scrape config for the backend
 - `scripts/install-observability.sh`: metrics-server + kube-prometheus-stack (Grafana on NodePort 32081)
 - `scripts/install-kong.sh`: Kong installation (ServiceMonitor enabled)
-- `app/app.py`: FastAPI app with `/metrics`, PII header tracking, and CPU burn
+- `scripts/create-llm-secret-from-env.sh`: build the LLM API Secret from env vars (no plaintext YAML)
+- `app/app.py`: FastAPI app with Ollama/OpenAI/Gemini routing, `/metrics`, PII header tracking, and CPU burn
 
 ## Troubleshooting
 

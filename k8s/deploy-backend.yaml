@@ -28,6 +28,26 @@ spec:
               value: "llama3"
             - name: PROVIDER
               value: "ollama"
+            - name: OPENAI_MODEL_CHEAP
+              value: "gpt-4o-mini"
+            - name: OPENAI_MODEL_SMART
+              value: "gpt-4o"
+            - name: GEMINI_MODEL_CHEAP
+              value: "gemini-2.0-flash"
+            - name: GEMINI_MODEL_SMART
+              value: "gemini-1.5-pro"
+            - name: OPENAI_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: ai-llm-credentials
+                  key: openai-api-key
+                  optional: true
+            - name: GOOGLE_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: ai-llm-credentials
+                  key: google-api-key
+                  optional: true
           resources:
             requests:
               cpu: "150m"
