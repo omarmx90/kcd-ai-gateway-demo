@@ -170,8 +170,7 @@ Run **`make help`**. Common targets:
 | `service-backend.yaml` | Service port **http** → 8000 |
 | `ingress-gateway.yaml` | Kong Ingress: `/ai/*`, `/chat`, `/health`, `/metrics` + plugin list |
 | `hpa-backend.yaml` | HPA |
-| `kong-pii-sanitizer-plugin.yaml` | PII redaction + card block |
-| `kong-cost-router-plugin.yaml` | Sets `X-Cost-Route` from body length / `x-priority` |
+| `kong-ai-gateway-policy-plugin.yaml` | Combined pre-function: cost routing + PII (Kong allows only one `pre-function` per route) |
 | `kong-rate-limit-app-plugin.yaml` | Rate limit by `X-Application-Id` |
 | `kong-prometheus-plugin.yaml` | Kong metrics |
 | `servicemonitor-backend.yaml` | Prometheus scrape (`release: kube-prometheus-stack`, ns `monitoring`) |
@@ -297,7 +296,7 @@ curl -s -X POST http://localhost:8080/ai/summarize \
 
 ## PII sanitization demo (Kong pre-function)
 
-Plugin: `k8s/kong-pii-sanitizer-plugin.yaml`. Redacts **`text`** JSON field; blocks card-like patterns with **403**; sets **`X-PII-REDACTIONS`**.
+Plugin: `k8s/kong-ai-gateway-policy-plugin.yaml` (PII section). Redacts **`text`** JSON field; blocks card-like patterns with **403**; sets **`X-PII-REDACTIONS`**.
 
 ```bash
 curl -s -X POST http://localhost:8080/ai/summarize \

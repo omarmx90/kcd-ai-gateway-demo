@@ -524,7 +524,7 @@ async def call_gemini(model: str, system_prompt: str, user_prompt: str) -> str:
     except (KeyError, IndexError) as e:
         raise HTTPException(
             status_code=502,
-            detail=f"Unexpected Gemini response shape: {data!r[:800]}",
+            detail=f"Unexpected Gemini response shape: {repr(data)[:800]}",
         ) from e
     _demo_record_success("gemini")
     return out

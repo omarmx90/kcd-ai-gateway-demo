@@ -5,13 +5,14 @@ metadata:
   namespace: ai-gateway-demo
   annotations:
     konghq.com/strip-path: "false"
-    konghq.com/plugins: "rate-limit-by-app,cost-router,pii-sanitizer"
+    konghq.com/plugins: "rate-limit-by-app,ai-gateway-policy"
 spec:
   ingressClassName: kong
   rules:
+    # Browsers send Host: ai-gateway.local when you open http://ai-gateway.local:8080/...
     - host: ai-gateway.local
       http:
-        paths:
+        paths: &gateway_paths
           - path: /ai/summarize
             pathType: Prefix
             backend:
@@ -54,3 +55,8 @@ spec:
                 name: ai-backend
                 port:
                   number: 80
+    # Same routes when you open http://localhost:8080/... (Host: localhost).
+    # (Kubernetes Ingress cannot list 127.0.0.1 as host — use "localhost" in the URL, not the IP.)
+    - host: localhost
+      http:
+        paths: *gateway_paths

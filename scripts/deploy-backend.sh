@@ -10,8 +10,8 @@ kubectl apply -f k8s/deploy-backend.yaml
 kubectl apply -f k8s/service-backend.yaml
 
 kubectl apply -f k8s/kong-rate-limit-app-plugin.yaml
-kubectl apply -f k8s/kong-cost-router-plugin.yaml
-kubectl apply -f k8s/kong-pii-sanitizer-plugin.yaml
+kubectl apply -f k8s/kong-ai-gateway-policy-plugin.yaml
+kubectl delete kongplugin cost-router pii-sanitizer -n "${NAMESPACE}" --ignore-not-found=true
 kubectl apply -f k8s/ingress-gateway.yaml
 kubectl apply -f k8s/hpa-backend.yaml
 
